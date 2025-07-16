@@ -19,6 +19,6 @@ RUN pip install --upgrade pip && \
 # Copy rest of the application
 COPY src/MCP_server /app/MCP_server/
 
-EXPOSE 8001
+EXPOSE 8080
 
 CMD ["python", "MCP_server/server.py"]
