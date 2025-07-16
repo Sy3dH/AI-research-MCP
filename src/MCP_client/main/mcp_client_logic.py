@@ -5,7 +5,7 @@ from google.genai import types
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from MCP_client.personality.prompt import SYSTEM_PROMPT
+from personality.prompt import SYSTEM_PROMPT
 import json
 import os
 
