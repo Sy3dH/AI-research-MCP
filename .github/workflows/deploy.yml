@@ -69,7 +69,7 @@ jobs:
         gcloud beta run services add-iam-policy-binding $SERVER_NAME \
           --region $REGION \
           --member="allUsers" \
-          --role="roles/run.invoker"
+          --role="roles/run.invoker" -y
 
     # Get MCP Server URL
     - name: Get MCP Server URL
