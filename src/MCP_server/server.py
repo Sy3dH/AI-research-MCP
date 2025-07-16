@@ -220,6 +220,11 @@ async def search_web(query: str):
 async def retrieve_vector_stores():
     return list_vector_stores()
 
+@app.get("/health", tags=["Health"])
+def health_check():
+    """Health check endpoint for readiness probes"""
+    return JSONResponse(content={"status": "ok"})
+
 
 if __name__ == "__main__":
     mcp = FastApiMCP(app,include_operations=["retrieve_documents", "retrieve_vector_stores", "search_web"])
