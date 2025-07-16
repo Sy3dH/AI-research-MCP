@@ -22,7 +22,7 @@ COPY src/MCP_server /app/MCP_server/
 # Pre-download FastEmbed model
 RUN python3 -c "\
 from fastembed import TextEmbedding; \
-embedder = TextEmbedding(model_name='BAAI/bge-base-en-v1.5'); \
+embedder = TextEmbedding(model_name='BAAI/bge-small-en-v1.5'); \
 embedder.embed(['Pre-warm model download'])"
 
 EXPOSE 8080
