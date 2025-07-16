@@ -53,11 +53,17 @@ jobs:
     # Deploy MCP Server to Cloud Run
     - name: Deploy MCP Server
       run: |
+        echo "Deploying MCP Server..."
         gcloud run deploy $SERVER_NAME \
           --image $SERVER_IMAGE \
           --region $REGION \
           --platform managed \
-          --allow-unauthenticated
+          --allow-unauthenticated \
+          --set-env-vars \
+            BRAVE_SEARCH_API=${{ secrets.BRAVE_SEARCH_API }},\
+            GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }},\
+            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }},\
+            QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
 
     # Get MCP Server URL
     - name: Get MCP Server URL
