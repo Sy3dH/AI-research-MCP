@@ -33,7 +33,11 @@ jobs:
       uses: google-github-actions/setup-gcloud@v2
       with:
         project_id: ${{ env.PROJECT_ID }}
-        install_components: docker
+
+    # Authenticate Docker to push to GCP registry
+    - name: Authenticate Docker with Google Artifact/Container Registry
+      run: |
+            gcloud auth configure-docker --quiet
 
     # Configure Docker to use gcloud as a credential helper
     - name: Configure Docker authentication
