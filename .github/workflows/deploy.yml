@@ -3,7 +3,7 @@ name: Deploy MCP Server & Client to Cloud Run
 on:
   push:
     branches:
-      - main
+      - master
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
