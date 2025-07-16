@@ -51,7 +51,6 @@ jobs:
         docker push $SERVER_IMAGE
 
     # Deploy MCP Server to Cloud Run
-    # Deploy MCP Server to Cloud Run
     - name: Deploy MCP Server
       run: |
         echo "Deploying MCP Server..."
@@ -63,6 +62,14 @@ jobs:
           --timeout=900s \
           --set-env-vars BRAVE_SEARCH_API=${{ secrets.BRAVE_SEARCH_API }},GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }},GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }},QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
 
+    # Explicitly grant Invoker role to allUsers
+    - name: Grant Cloud Run Invoker Role
+      run: |
+        echo "Granting public access to MCP Server..."
+        gcloud beta run services add-iam-policy-binding $SERVER_NAME \
+          --region $REGION \
+          --member="allUsers" \
+          --role="roles/run.invoker"
 
     # Get MCP Server URL
     - name: Get MCP Server URL
