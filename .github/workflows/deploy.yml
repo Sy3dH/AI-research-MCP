@@ -51,6 +51,7 @@ jobs:
         docker push $SERVER_IMAGE
 
     # Deploy MCP Server to Cloud Run
+    # Deploy MCP Server to Cloud Run
     - name: Deploy MCP Server
       run: |
         echo "Deploying MCP Server..."
@@ -59,11 +60,8 @@ jobs:
           --region $REGION \
           --platform managed \
           --allow-unauthenticated \
-          --set-env-vars \
-            BRAVE_SEARCH_API=${{ secrets.BRAVE_SEARCH_API }},\
-            GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }},\
-            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }},\
-            QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
+          --set-env-vars BRAVE_SEARCH_API=${{ secrets.BRAVE_SEARCH_API }},GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }},GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }},QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
+
 
     # Get MCP Server URL
     - name: Get MCP Server URL
