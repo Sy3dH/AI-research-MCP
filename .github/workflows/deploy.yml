@@ -3,7 +3,7 @@ name: Deploy MCP Server & Client to Cloud Run
 on:
   push:
     branches:
-      - main
+      - master
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -33,7 +33,11 @@ jobs:
       uses: google-github-actions/setup-gcloud@v2
       with:
         project_id: ${{ env.PROJECT_ID }}
-        install_components: docker
+
+    # Authenticate Docker to push to GCP registry
+    - name: Authenticate Docker with Google Artifact/Container Registry
+      run: |
+            gcloud auth configure-docker --quiet
 
     # Configure Docker to use gcloud as a credential helper
     - name: Configure Docker authentication
@@ -43,17 +47,21 @@ jobs:
     # Build and push MCP Server Docker image
     - name: Build and push MCP Server image
       run: |
-        docker build -t $SERVER_IMAGE ./src/docker/mcp_server
+        docker build -f src/docker/mcp_server/Dockerfile -t $SERVER_IMAGE .
         docker push $SERVER_IMAGE
 
     # Deploy MCP Server to Cloud Run
+    # Deploy MCP Server to Cloud Run
     - name: Deploy MCP Server
       run: |
+        echo "Deploying MCP Server..."
         gcloud run deploy $SERVER_NAME \
           --image $SERVER_IMAGE \
           --region $REGION \
           --platform managed \
-          --allow-unauthenticated
+          --allow-unauthenticated \
+          --set-env-vars BRAVE_SEARCH_API=${{ secrets.BRAVE_SEARCH_API }},GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }},GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }},QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
+
 
     # Get MCP Server URL
     - name: Get MCP Server URL
@@ -87,7 +95,7 @@ jobs:
     # Build and push MCP Client Docker image
     - name: Build and push MCP Client image
       run: |
-        docker build -t $CLIENT_IMAGE ./src/docker/mcp_client
+        docker build -f src/docker/mcp_client/Dockerfile -t $CLIENT_IMAGE .
         docker push $CLIENT_IMAGE
 
     # Deploy MCP Client to Cloud Run with MCP Server URL as env var
