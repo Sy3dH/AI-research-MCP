@@ -1,0 +1,101 @@
+name: Deploy MCP Server & Client to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  SERVER_NAME: mcp-server
+  CLIENT_NAME: mcp-client
+  SERVER_IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/mcp-server
+  CLIENT_IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/mcp-client
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Authenticate to Google Cloud
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    # Set up Google Cloud CLI
+    - name: Set up Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        install_components: docker
+
+    # Configure Docker to use gcloud as a credential helper
+    - name: Configure Docker authentication
+      run: |
+        gcloud auth configure-docker
+
+    # Build and push MCP Server Docker image
+    - name: Build and push MCP Server image
+      run: |
+        docker build -t $SERVER_IMAGE ./src/docker/mcp_server
+        docker push $SERVER_IMAGE
+
+    # Deploy MCP Server to Cloud Run
+    - name: Deploy MCP Server
+      run: |
+        gcloud run deploy $SERVER_NAME \
+          --image $SERVER_IMAGE \
+          --region $REGION \
+          --platform managed \
+          --allow-unauthenticated
+
+    # Get MCP Server URL
+    - name: Get MCP Server URL
+      id: get-server-url
+      run: |
+        SERVER_URL=$(gcloud run services describe $SERVER_NAME \
+          --region $REGION \
+          --format 'value(status.url)')
+        echo "SERVER_URL=$SERVER_URL" >> $GITHUB_ENV
+        echo "✅ MCP Server deployed at: $SERVER_URL"
+
+    # Wait for MCP Server health check
+    - name: Wait for MCP Server to become healthy
+      run: |
+        echo "⏳ Waiting for MCP Server health endpoint..."
+        for i in {1..20}; do
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.SERVER_URL }}/health" || echo "000")
+          if [ "$STATUS" -eq 200 ]; then
+            echo "✅ MCP Server is healthy!"
+            break
+          fi
+          echo "Waiting for MCP Server... ($i/20)"
+          sleep 5
+        done
+
+        if [ "$STATUS" -ne 200 ]; then
+          echo "❌ MCP Server did not become healthy in time"
+          exit 1
+        fi
+
+    # Build and push MCP Client Docker image
+    - name: Build and push MCP Client image
+      run: |
+        docker build -t $CLIENT_IMAGE ./src/docker/mcp_client
+        docker push $CLIENT_IMAGE
+
+    # Deploy MCP Client to Cloud Run with MCP Server URL as env var
+    - name: Deploy MCP Client
+      run: |
+        gcloud run deploy $CLIENT_NAME \
+          --image $CLIENT_IMAGE \
+          --region $REGION \
+          --platform managed \
+          --allow-unauthenticated \
+          --set-env-vars MCP_SERVER_URL=${{ env.SERVER_URL }}

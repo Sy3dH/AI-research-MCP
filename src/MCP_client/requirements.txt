@@ -1,0 +1,5 @@
+fastapi-mcp==0.3.7
+fastapi==0.116.1
+google-genai==1.25.0
+python-dotenv==1.1.1
+uvicorn==0.35.0
