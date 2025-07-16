@@ -47,7 +47,7 @@ jobs:
     # Build and push MCP Server Docker image
     - name: Build and push MCP Server image
       run: |
-        docker build -t $SERVER_IMAGE ./src/docker/mcp_server
+        docker build -f src/docker/MCP_server/Dockerfile -t $SERVER_IMAGE .
         docker push $SERVER_IMAGE
 
     # Deploy MCP Server to Cloud Run
@@ -91,7 +91,7 @@ jobs:
     # Build and push MCP Client Docker image
     - name: Build and push MCP Client image
       run: |
-        docker build -t $CLIENT_IMAGE ./src/docker/mcp_client
+        docker build -f src/docker/MCP_client/Dockerfile -t $CLIENT_IMAGE .
         docker push $CLIENT_IMAGE
 
     # Deploy MCP Client to Cloud Run with MCP Server URL as env var
