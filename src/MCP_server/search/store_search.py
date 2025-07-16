@@ -1,7 +1,7 @@
 from typing import List, Optional
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from qdrant_client import QdrantClient
-from MCP_server.configs.configs import SIMILARITY_THRESHOLD, QDRANT_URL
+from configs.configs import SIMILARITY_THRESHOLD, QDRANT_URL
 from qdrant_client.http.exceptions import UnexpectedResponse
 from dotenv import load_dotenv
 import os

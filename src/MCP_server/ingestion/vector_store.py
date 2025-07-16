@@ -1,7 +1,7 @@
 from typing import List
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
-from MCP_server.models.models import DocumentModel
+from models.models import DocumentModel
 from datetime import datetime
 import os
 from dotenv import load_dotenv

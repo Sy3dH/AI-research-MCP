@@ -7,7 +7,7 @@ import requests
 from dotenv import load_dotenv
 from typing import List, Optional
 from fastapi_mcp import FastApiMCP
-from MCP_server.models.models import Document
+from models.models import Document
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager

@@ -1,5 +1,5 @@
 from typing import List
-from MCP_server.models.models import DocumentModel, Document
+from models.models import DocumentModel, Document
 
 def prepare_documents(researcher: str, findings: str, chunks: List[Document]) -> List[DocumentModel]:
     return [
