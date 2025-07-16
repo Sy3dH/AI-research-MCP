@@ -19,6 +19,11 @@ RUN pip install --upgrade pip && \
 # Copy rest of the application
 COPY src/MCP_server /app/MCP_server/
 
+# Pre-download FastEmbed model
+RUN python3 -c "\
+from fastembed import TextEmbedding; \
+embedder = TextEmbedding(model_name='BAAI/bge-base-en-v1.5'); \
+
 EXPOSE 8080
 
 CMD ["python", "MCP_server/server.py"]
