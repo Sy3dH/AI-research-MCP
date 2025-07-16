@@ -5,10 +5,11 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
-from MCP_client.main.mcp_client_logic import MCPClient
+from main.mcp_client_logic import MCPClient
 
 load_dotenv()
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
