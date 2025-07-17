@@ -56,6 +56,7 @@ jobs:
         echo "Deploying MCP Server..."
         gcloud run deploy $SERVER_NAME \
           --image $SERVER_IMAGE \
+          --region europe-west1 \
           --allow-unauthenticated \
           --timeout=900s \
           --set-env-vars BRAVE_SEARCH_API=${{ secrets.BRAVE_SEARCH_API }},GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }},GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }},QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
