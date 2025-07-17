@@ -1,2 +1,2 @@
 # AI-research-MCP
-making research reproducible so no engineer in the team redo the work
+Making research reproducible so no engineer in the team redo the work
