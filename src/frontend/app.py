@@ -228,7 +228,7 @@ with tab_ingest:
                 with st.spinner("Ingesting documents... This may take a while ⏳"):
                     try:
                         response = requests.post(
-                            url=f"{mcp_server_endpoint}/ingest",
+                            url=f"{mcp_server_endpoint}/ingest_documents",
                             data=form_data,
                             files=files
                         )
