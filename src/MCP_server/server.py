@@ -18,7 +18,10 @@ from ingestion.vector_store import VectorStore
 from qdrant_client.http.exceptions import UnexpectedResponse
 from utils.gcs_utils import upload_to_gcs, generate_signed_url
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from search.store_search import vector_search_with_filter, is_vector_similar, list_vector_stores, is_collection_exist
+from search.store_search import vector_search_with_filter, is_vector_similar, list_vector_stores, is_collection_exist, \
+    extract_from_all_collections
+from pathlib import Path
+from qdrant_client import models
 
 load_dotenv()
 BRAVE_SEARCH_API = os.getenv("BRAVE_SEARCH_API")
@@ -58,12 +61,11 @@ async def ingest_documents(
             vector_size = embedder.vector_size
 
         file_buffers = []
-        doc_sources = []
         gcs_paths = []
         all_docs = []
+        all_vectors = []
 
-        # 1. Read and parse PDFs
-        for idx, pdf in enumerate(pdfs):
+        for pdf in pdfs:
             pdf_bytes = await pdf.read()
             file_buffers.append((pdf.filename, pdf_bytes))
 
@@ -73,57 +75,170 @@ async def ingest_documents(
             chunks = parse_pdf_chunks(io.BytesIO(pdf_bytes))
             logger.info(f"Extracted {len(chunks)} chunks from {pdf.filename}")
 
-            for chunk in chunks:
-                doc = Document(text=chunk, metadata={"file_path": gcs_filename})
-                doc_sources.append(idx)
+            # === 2. Embed all chunks at once ===
+            chunk_vectors = embedder.embed(chunks)
+
+            # === 3. Create Document objects per chunk ===
+            for i, (chunk, vector) in enumerate(zip(chunks, chunk_vectors)):
+                doc = Document(
+                    text=chunk,
+                    metadata={
+                        "file_path": gcs_filename,
+                        "filename": pdf.filename,
+                        "chunk_index": i,
+                        "num_chunks": len(chunks),
+                    },
+                )
                 all_docs.append(doc)
+                all_vectors.append(vector)
 
-        # 2. Embed & prepare documents
         docs = prepare_documents(researcher, findings, all_docs)
-        vectors = embedder.embed([doc.text for doc in all_docs])
 
+        store = VectorStore(collection_name=collection_name, vector_size=vector_size)
+
+        if not is_collection_exist(collection_name):
+            store.init_collection()
+
+        search_queries = [
+            models.QueryRequest(
+                query=vector,
+                score_threshold=0.95,
+            )
+            for vector in all_vectors
+        ]
+
+        search_results = store.client.query_batch_points(
+            collection_name=collection_name,
+            requests=search_queries,
+        )
+
+        print(search_results)
         insertable_docs = []
         insertable_vectors = []
         skipped_docs = []
 
-        for doc, vector in zip(docs, vectors):
-            if is_collection_exist(collection_name) and is_vector_similar(vector, collection_name):
+        for doc, vector, result in zip(docs, all_vectors, search_results):
+            if result.points and len(result.points) > 0:
                 skipped_docs.append(doc)
             else:
                 insertable_docs.append(doc)
                 insertable_vectors.append(vector)
 
-        used_pdf_indices = set(doc_sources[docs.index(doc)] for doc in insertable_docs)
+        used_indices = {
+            i for i, d in enumerate(all_docs)
+            if d in insertable_docs
+        }
         uploaded_files = []
-
-        # 3. Upload selected PDFs to GCS
-        for i in used_pdf_indices:
+        for i in used_indices:
             original_name, content = file_buffers[i]
             gcs_filename = gcs_paths[i]
             upload_to_gcs(content, gcs_filename)
             logger.info(f"Uploaded file to GCS: {gcs_filename}")
             uploaded_files.append(gcs_filename)
 
-        # 4. Ingest into vector store
-        store = VectorStore(collection_name=collection_name, vector_size=vector_size)
-        store.init_collection()
-        store.ingest(insertable_docs, insertable_vectors)
+        if insertable_docs and insertable_vectors:
+            store.ingest_batch(insertable_docs, insertable_vectors)
 
         return {
-            "message": f"Ingested {len(insertable_docs)} chunks into collection '{collection_name}' successfully.",
+            "message": f"Ingested {len(insertable_docs)} chunks into '{collection_name}' successfully.",
             "docs_ingested": len(insertable_docs),
             "docs_skipped": len(skipped_docs),
-            "inserted_documents": insertable_docs,
-            "skipped_documents": skipped_docs,
-            "saved_files": uploaded_files
+            "inserted_documents": [Path(d.pdf_path).name for d in insertable_docs],
+            "skipped_documents": [Path(d.pdf_path).name for d in skipped_docs],
+            "saved_files": uploaded_files,
         }
 
     except Exception as e:
         logger.exception("Failed to ingest documents")
         return {
             "error": str(e),
-            "message": "Document ingestion failed. See server logs for more details."
+            "message": "Document ingestion failed. See server logs for more details.",
         }
+
+# @app.post("/ingest_documents")
+# async def ingest_documents(
+#     researcher: str = Form(...),
+#     findings: str = Form(...),
+#     collection_name: str = Form("AI_store"),
+#     embedding_model: Optional[str] = Form(None),
+#     pdfs: List[UploadFile] = File(...)
+# ):
+#     try:
+#         embedder = app.state.embedder
+#         vector_size = embedder.vector_size
+#
+#         if embedding_model:
+#             logger.info(f"Using custom embedding model: {embedding_model}")
+#             embedder = FastEmbedder(embedding_model)
+#             vector_size = embedder.vector_size
+#
+#         file_buffers = []
+#         doc_sources = []
+#         gcs_paths = []
+#         all_docs = []
+#
+#         # 1. Read and parse PDFs
+#         for idx, pdf in enumerate(pdfs):
+#             pdf_bytes = await pdf.read()
+#             file_buffers.append((pdf.filename, pdf_bytes))
+#
+#             gcs_filename = f"uploads/{uuid.uuid4()}_{pdf.filename}"
+#             gcs_paths.append(gcs_filename)
+#
+#             chunks = parse_pdf_chunks(io.BytesIO(pdf_bytes))
+#             logger.info(f"Extracted {len(chunks)} chunks from {pdf.filename}")
+#
+#             for chunk in chunks:
+#                 doc = Document(text=chunk, metadata={"file_path": gcs_filename})
+#                 doc_sources.append(idx)
+#                 all_docs.append(doc)
+#
+#         # 2. Embed & prepare documents
+#         docs = prepare_documents(researcher, findings, all_docs)
+#         vectors = embedder.embed([doc.text for doc in all_docs])
+#
+#         insertable_docs = []
+#         insertable_vectors = []
+#         skipped_docs = []
+#
+#         for doc, vector in zip(docs, vectors):
+#             if is_collection_exist(collection_name) and is_vector_similar(vector, collection_name):
+#                 skipped_docs.append(doc)
+#             else:
+#                 insertable_docs.append(doc)
+#                 insertable_vectors.append(vector)
+#
+#         used_pdf_indices = set(doc_sources[docs.index(doc)] for doc in insertable_docs)
+#         uploaded_files = []
+#
+#         # 3. Upload selected PDFs to GCS
+#         for i in used_pdf_indices:
+#             original_name, content = file_buffers[i]
+#             gcs_filename = gcs_paths[i]
+#             upload_to_gcs(content, gcs_filename)
+#             logger.info(f"Uploaded file to GCS: {gcs_filename}")
+#             uploaded_files.append(gcs_filename)
+#
+#         # 4. Ingest into vector store
+#         store = VectorStore(collection_name=collection_name, vector_size=vector_size)
+#         store.init_collection()
+#         store.ingest(insertable_docs, insertable_vectors)
+#
+#         return {
+#             "message": f"Ingested {len(insertable_docs)} chunks into collection '{collection_name}' successfully.",
+#             "docs_ingested": len(insertable_docs),
+#             "docs_skipped": len(skipped_docs),
+#             "inserted_documents": insertable_docs,
+#             "skipped_documents": skipped_docs,
+#             "saved_files": uploaded_files
+#         }
+#
+#     except Exception as e:
+#         logger.exception("Failed to ingest documents")
+#         return {
+#             "error": str(e),
+#             "message": "Document ingestion failed. See server logs for more details."
+#         }
 
 @app.get("/download/")
 def download_file(file_path: str):
@@ -151,7 +266,8 @@ def download_file(file_path: str):
         filename=os.path.basename(file_path)
     )
 
-@app.post("/retrieve_documents", operation_id="retrieve_documents")
+@app.post("/retrieve_documents", operation_id="retrieve_documents", description="This tool is used to retrieve "
+                                                                            "documents from a vector store.")
 async def retrieve_documents(
     query_text: str,
     collection_name: str = "AI_store",
@@ -175,7 +291,40 @@ async def retrieve_documents(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Unexpected error: {str(e)}"})
 
-@app.post("/search_web", operation_id="search_web")
+# @app.post("/quick_search", operation_id="quick_search", description= "Quickly iterate through multiple vector stores"
+#                                                                      "to find the relevant findings and collection_names.")
+# async def quick_search(query:str):
+#     try:
+#         # Search all collections for the query
+#         results = extract_from_all_collections(query)
+#
+#         # Format response
+#         response = {
+#             "query": query,
+#             "total_collections": len(results),
+#             "collections": []
+#         }
+#
+#         for collection_name, metadata_list in results.items():
+#             collection_data = {
+#                 "collection_name": collection_name,
+#                 "match_count": len(metadata_list),
+#                 "findings": metadata_list
+#             }
+#             response["collections"].append(collection_data)
+#
+#         return response
+#
+#     except Exception as e:
+#         return {
+#             "error": str(e),
+#             "query": query,
+#             "collections": []
+#         }
+
+
+@app.post("/search_web", operation_id="search_web", description="Searches your queries over the internet and provide"
+                                                            "links to the research along with the summary of them.")
 async def search_web(query: str):
     try:
         response = requests.get(
@@ -216,7 +365,8 @@ async def search_web(query: str):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Unexpected error: {str(e)}"})
 
-@app.get("/retrieve_vector_stores", operation_id="retrieve_vector_stores")
+@app.get("/retrieve_vector_stores", operation_id="retrieve_vector_stores", description="retrieves the names of vector"
+                                                                                       "stores.")
 async def retrieve_vector_stores():
     return list_vector_stores()
 
@@ -227,7 +377,7 @@ def health_check():
 
 
 if __name__ == "__main__":
-    mcp = FastApiMCP(app,include_operations=["retrieve_documents", "retrieve_vector_stores", "search_web"])
+    mcp = FastApiMCP(app, include_operations=["retrieve_documents", "retrieve_vector_stores", "search_web"])
     mcp.mount()
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
