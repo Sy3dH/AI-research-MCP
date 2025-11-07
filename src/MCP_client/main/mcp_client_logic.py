@@ -9,6 +9,7 @@ from personality.prompt import SYSTEM_PROMPT
 import json
 import os
 
+
 load_dotenv()
 class MCPClient:
     def __init__(self):
@@ -16,51 +17,102 @@ class MCPClient:
         self.exit_stack = AsyncExitStack()
         self.genai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         self.conversation_history = []
+
     async def connect_to_sse_server(self, server_url: str):
         """Connect to an MCP server and list available tools."""
-        # Setup SSE connection
         self._streams_context = sse_client(url=server_url)
         streams = await self._streams_context.__aenter__()
 
         self._session_context = ClientSession(*streams)
         self.session: ClientSession = await self._session_context.__aenter__()
-
-        # Initialize session
         await self.session.initialize()
 
-        # print("Connected to SSE server.")
-        # print("Listing tools...")
-
+        # List available tools (optional)
         response = await self.session.list_tools()
         tools = response.tools
-
-        # print("Available tools:")
-        # for tool in tools:
-        #     print(f"- {tool.name}: {tool.description}")
+        print("✅ Connected to SSE Server. Tools:", [t.name for t in tools])
 
     async def cleanup(self):
         """Cleanup session and stream contexts."""
-        if self._session_context:
+        if hasattr(self, "_session_context"):
             await self._session_context.__aexit__(None, None, None)
-        if self._streams_context:
+        if hasattr(self, "_streams_context"):
             await self._streams_context.__aexit__(None, None, None)
 
-    # Main chat methods
+    # =========================
+    #   MAIN CHAT METHODS
+    # =========================
+
+    async def call_tool(self, tool_name: str, tool_args: dict) -> dict:
+        """
+        Generic method to call any tool on the MCP server.
+        """
+        if not self.session:
+            raise RuntimeError(
+                "No active MCP session. Connect first using connect_to_sse_server()."
+            )
+
+        try:
+            print(f"🔧 Calling tool: {tool_name} with args: {tool_args}")
+
+            # Call the tool using the MCP session
+            result = await self.session.call_tool(tool_name, tool_args)
+
+            # Extract result data
+            tool_result_data = result.content
+
+            try:
+                # Try to parse as JSON if response is stringified
+                tool_data = json.loads(tool_result_data)
+            except Exception:
+                tool_data = tool_result_data
+
+            print(f"✅ Tool {tool_name} result:", tool_data)
+            return tool_data
+
+        except Exception as e:
+            print(f"❌ Error calling tool {tool_name}: {e}")
+            raise
+
+    async def process_chat_with_tool(
+        self, query: str, conversation_history: list, tool_name: str
+    ):
+        """
+        Example processing method — simulate or call a specific MCP tool.
+        """
+        try:
+            result = await self.session.call_tool(
+                tool_name,
+                {"query": query, "conversation": conversation_history},
+            )
+            return {
+                "response": result.content,
+                "conversation_history": conversation_history + [query],
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
     async def chat_with_tool(self, query: str, tool_name: str) -> dict:
-        """
-        Chat with tool restriction (only one tool used for this interaction).
-        """
-        result = await self.process_chat_with_tool(query, self.conversation_history, tool_name=tool_name)
-        #self.conversation_history = result["conversation_history"]
+        """Chat with a single specific tool."""
+        result = await self.process_chat_with_tool(
+            query, self.conversation_history, tool_name=tool_name
+        )
+        self.conversation_history.append(
+            {"tool": tool_name, "query": query, "result": result}
+        )
         return result
 
     async def chat_with_all_tools(self, query: str) -> dict:
-        """
-        Chat using all available tools (dynamic invocation as needed).
-        """
-        result = await self.process_chat_with_all_tools(query, self.conversation_history)
-        #self.conversation_history = result["conversation_history"]
-        return result
+        """Chat with all tools dynamically."""
+        tools = await self.session.list_tools()
+        all_results = []
+        for tool in tools.tools:
+            result = await self.process_chat_with_tool(
+                query, self.conversation_history, tool.name
+            )
+            all_results.append(result)
+        return {"results": all_results}
+
 
     async def process_chat_with_tool(self, query: str, conversation_history: list = None,
                                      tool_name: str = None) -> dict:
@@ -215,6 +267,9 @@ class MCPClient:
                             top_score = tool_data["results"][0][1][0]["score"]
                             fallback_needed = top_score < 0.7
                         except (KeyError, IndexError, TypeError):
+                            fallback_needed = True
+                    elif tool_name == "chat_with_researcher":
+                        if not tool_data.get("results_found", 0):
                             fallback_needed = True
 
                     if fallback_needed:
