@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from main.mcp_client_logic import MCPClient
 
 load_dotenv()
-MCP_SERVER_URL = "http://localhost:8080/mcp"
+MCP_SERVER_URL = "http://localhost:8082/mcp"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,6 +24,7 @@ class ToolName(str, Enum):
     retrieve_documents = "retrieve_documents"
     retrieve_vector_stores = "retrieve_vector_stores"
     search_web = "search_web"
+    chat_with_researcher = "chat_with_researcher"
 
 class QueryRequest(BaseModel):
     query: str = Field()
@@ -42,59 +43,62 @@ async def list_tools():
         logger.exception("Error in /list_tools endpoint")
         raise HTTPException(status_code=500, detail=str(e))
 
-# @app.post("/query")
-# # async def query_mcp(request: QueryRequest):
-# #     query = request.query.strip()
-# #     if query.lower() in {"quit", "exit"}:
-# #         raise HTTPException(status_code=400, detail="Quit/exit command not allowed via API.")
-# #
-# #     client = MCPClient()  # 🔥 Create a fresh MCPClient for this request
-# #
-# #     try:
-# #         logger.info("Connecting to SSE server...")
-# #         await client.connect_to_sse_server(server_url=MCP_SERVER_URL)
-# #
-# #         response = await client.(query)
-# #
-# #         await client.cleanup()  # 🔄 Cleanup after request
-# #         return {"response": response}
-# #     except Exception as e:
-# #         logger.exception("Error in /query endpoint")
-# #         raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post("/chat")
 async def chat_mcp(
-    query: str = Query(..., description="Your question or prompt", example="Summarize this document."),
-    tool_name: Optional[ToolName] = Query(
-        None,
-        description="Select a tool to process the query"
-    )
+    query: str = Query(
+        ..., description="Your question or prompt", example="Summarize this document."
+    ),
+    tool_name: Optional[str] = Query(
+        None, description="Select a tool to process the query"
+    ),
+    researcher: Optional[str] = Query(
+        None, description="Name of the researcher (for chat_with_researcher)"
+    ),
+    collection_name: str = Query(
+        "AI_store", description="Collection name to search (default: AI_store)"
+    ),
 ):
     query = query.strip()
     print("query:", query)
     print("tool_name:", tool_name)
+    print("researcher:", researcher)
+    print("collection_name:", collection_name)
 
     if query.lower() in {"quit", "exit"}:
-        raise HTTPException(status_code=400, detail="Quit/exit command not allowed via API.")
+        raise HTTPException(
+            status_code=400, detail="Quit/exit command not allowed via API."
+        )
 
     client = MCPClient()
 
     try:
-        logger.info("Connecting to SSE server...")
-        await client.connect_to_sse_server(server_url=MCP_SERVER_URL)
+        await client.connect_to_sse_server(server_url=mcp_server_url)
 
-        if tool_name:
+        # If a specific tool is chosen
+        if tool_name == "chat_with_researcher":
+            if not researcher:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Researcher name required for chat_with_researcher.",
+                )
+
+            payload = {
+                "researcher": researcher,
+                "query_text": query,
+                "collection_name": collection_name,
+            }
+            response = await client.call_tool("chat_with_researcher", payload)
+
+        elif tool_name:
             response = await client.chat_with_tool(query, tool_name)
+
         else:
             response = await client.chat_with_all_tools(query)
 
         await client.cleanup()
-        logger.info(f"Chat response: {response}")
         return {"response": response}
 
     except Exception as e:
-        logger.exception("Error in /chat endpoint")
         raise HTTPException(status_code=500, detail=str(e))
 
 
